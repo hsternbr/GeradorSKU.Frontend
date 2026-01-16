@@ -169,13 +169,18 @@ export interface Item {
   sku: string;
   descricaoCompleta: string;
   descricaoEtiqueta: string;
+  picture?: string;
 }
 
 // API de Items - usando a mesma função fetchAPI
 export const itemAPI = {
-  create: (data: { sku: string; descricaoCompleta: string; descricaoEtiqueta: string }) =>
+  
+  create: (data: { sku: string; descricaoCompleta: string; descricaoEtiqueta: string; picture?: string }) =>
     fetchAPI<Item>('/api/items', {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json', // 👈 ESSENCIAL
+      },
       body: JSON.stringify(data),
     }),
 };
@@ -193,4 +198,62 @@ export const itemAPIUpdate = {
       body: JSON.stringify(data),
     }),
 };
+
+export const sequenceAPI = {
+  getNextSku: () =>
+    fetchAPI<{ sequenceFormatada: string }>('/api/sequence/sku', {
+      method: 'GET',
+    }),
+};
+
+// Função auxiliar para fazer upload de arquivos
+async function uploadFile(endpoint: string, formData: FormData): Promise<any> {
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const text = await response.text();
+
+    if (!response.ok) {
+      let errorMessage = `Erro ${response.status}: ${response.statusText}`;
+      if (text) {
+        try {
+          const errorData = JSON.parse(text);
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } catch {
+          errorMessage = text;
+        }
+      }
+      throw new Error(errorMessage);
+    }
+
+    if (!text) {
+      return {};
+    }
+    
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('Erro desconhecido no upload');
+  }
+}
+
+// API de Upload de Imagem
+export const uploadImagemAPI = {
+  upload: (data: { file: File; nome: string }) => {
+    const formData = new FormData();
+    formData.append('file', data.file);
+    formData.append('nome', data.nome);
+    return uploadFile('/api/upload/imagem', formData);
+  },
+};
+
 

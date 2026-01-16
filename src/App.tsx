@@ -10,13 +10,17 @@ import {
   Row,
   Col,
   App,
-  Modal
+  Modal,
+  Upload
 } from 'antd';
 import {
   BarcodeOutlined,
   LinkOutlined,
   PlusOutlined,
-  EditOutlined
+  EditOutlined,
+  ArrowLeftOutlined,
+  UploadOutlined,
+  DeleteOutlined
 } from '@ant-design/icons';
 import * as yup from 'yup';
 import {
@@ -26,8 +30,10 @@ import {
   materialAPI,
   corAPI,
   itemAPI,
-  itemAPIUpdate
+  itemAPIUpdate,
+  sequenceAPI
 } from './services/api';
+import { gerarSKU } from './utils/gerarSKU';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -97,7 +103,10 @@ function AppContent() {
   const [select5, setSelect5] = useState<string | undefined>(undefined);
   const [descricaoCompleta, setDescricaoCompleta] = useState<string>('');
   const [descricaoEtiqueta, setDescricaoEtiqueta] = useState<string>('');
-  
+  const [imagem, setImagem] = useState<File | null>(null);
+  const [pictureFile, setPictureFile] = useState<File | null>(null);
+  const [picture, setPicture] = useState<string | null>(null);
+  const [NCMCode, setNCMCode] = useState<string | null>(null);
   const [showInputs, setShowInputs] = useState(false);
   const [skuGerado, setSkuGerado] = useState<string | null>(null);
   const [salvandoItem, setSalvandoItem] = useState(false);
@@ -105,7 +114,7 @@ function AppContent() {
   const [modalOpen, setModalOpen] = useState<any>({});
   const [currentModalType, setCurrentModalType] = useState('');
   const [loading, setLoading] = useState(true);
-  const contadorRef = useRef(1);
+  
 
   // Carregar dados do backend
   useEffect(() => {
@@ -146,35 +155,6 @@ function AppContent() {
   const metalSecundarioOptions = Object.entries(labels.metalSecundario).map(([value, label]) => ({ value, label }));
   const materialComplementarOptions = Object.entries(labels.materialComplementar).map(([value, label]) => ({ value, label }));
   const corOptions = Object.entries(labels.cor).map(([value, label]) => ({ value, label }));
-
-  const gerarSKU = (
-    artigo: string,
-    metalBase: string,
-    metalSecundario?: string,
-    materialComplementar?: string,
-    cor?: string
-  ) => {
-    const sufixo = String(contadorRef.current).padStart(5, '0');
-    contadorRef.current++;
-
-    let sku = `${artigo}${metalBase}`;
-    
-    if (metalSecundario) {
-      sku += metalSecundario;
-    }
-    
-    if (materialComplementar) {
-      sku += materialComplementar;
-    }
-    
-    if (cor) {
-      sku += cor;
-    }
-    
-    sku += `.${sufixo}`;
-
-    return sku;
-  };
 
   const gerarDescricaoCompleta = (
     artigo: string,
@@ -231,63 +211,64 @@ function AppContent() {
     return resultado;
   };
 
-  const handleGerarSKU = async () => {
-    try {
-      // Validar com Yup usando os estados
-      await validationSchema.validate(
-        { select1, select2, select3, select4, select5 },
-        { abortEarly: false }
-      );
+ const handleGerarSKU = async () => {
+  try {
+    await validationSchema.validate(
+      { select1, select2, select3, select4, select5 },
+      { abortEarly: false }
+    );
 
-      const sku = gerarSKU(
-        select1!,
-        select2!,
-        select3!,
-        select4,
-        select5
-      );
+    // 🔥 BUSCA SEQUENCE DO BANCO
+    const response = await sequenceAPI.getNextSku();
+    const sequenceFormatada = response.sequenceFormatada;
 
-      const novaDescricaoCompleta = gerarDescricaoCompleta(
-        select1!,
-        select2!,
-        select3!,
-        select4,
-        select5
-      );
+    // 🔥 GERA SKU USANDO A SEQUENCE
+    const sku = gerarSKU(
+      select1!,
+      select2!,
+      select3!,
+      select4,
+      select5,
+      sequenceFormatada
+    );
 
-      const novaDescricaoEtiqueta = gerarDescricaoEtiqueta(novaDescricaoCompleta);
+    const novaDescricaoCompleta = gerarDescricaoCompleta(
+      select1!,
+      select2!,
+      select3!,
+      select4,
+      select5
+    );
 
-      setSkuGerado(sku);
-      setDescricaoCompleta(novaDescricaoCompleta);
-      setDescricaoEtiqueta(novaDescricaoEtiqueta);
-      setShowInputs(true);
+    const novaDescricaoEtiqueta =
+      gerarDescricaoEtiqueta(novaDescricaoCompleta);
 
-      // Atualiza os campos do formulário
-      form.setFieldsValue({
-        descricaoCompleta: novaDescricaoCompleta,
-        descricaoEtiqueta: novaDescricaoEtiqueta
-      });
+    setSkuGerado(sku);
+    setDescricaoCompleta(novaDescricaoCompleta);
+    setDescricaoEtiqueta(novaDescricaoEtiqueta);
+    setShowInputs(true);
 
-      message.success('SKU e descrições gerados com sucesso!');
-    } catch (error: unknown) {
-      if (error instanceof yup.ValidationError) {
-        // Mapear erros do Yup para o formato do Ant Design
-        const fieldErrors: Array<{ name: string[]; errors: string[] }> = [];
-        error.inner.forEach((err: yup.ValidationError) => {
-          if (err.path) {
-            fieldErrors.push({
-              name: [err.path],
-              errors: [err.message]
-            });
-          }
-        });
-        form.setFields(fieldErrors);
-        message.error('Por favor, preencha todos os campos obrigatórios');
-      } else {
-        message.error('Erro ao gerar SKU');
-      }
+    form.setFieldsValue({
+      descricaoCompleta: novaDescricaoCompleta,
+      descricaoEtiqueta: novaDescricaoEtiqueta
+    });
+
+    message.success('SKU e descrições gerados com sucesso!');
+  } catch (error: unknown) {
+    if (error instanceof yup.ValidationError) {
+      const fieldErrors = error.inner.map(err => ({
+        name: [err.path!],
+        errors: [err.message]
+      }));
+      form.setFields(fieldErrors);
+      message.error('Preencha todos os campos obrigatórios');
+    } else {
+      console.error(error);
+      message.error('Erro ao gerar SKU');
     }
-  };
+  }
+};
+
 
 
   const handleAbrirModal = (tipo: string) => {
@@ -361,28 +342,53 @@ function AppContent() {
     }
   };
 
-  const handleCriarItemSAP = async () => {
-    if (!skuGerado || !descricaoCompleta || !descricaoEtiqueta) {
-      message.warning('Gere o SKU e as descrições primeiro');
-      return;
+ const handleCriarItemSAP = async () => {
+  if (!skuGerado || !descricaoCompleta || !descricaoEtiqueta) {
+    message.warning('Preencha os campos obrigatórios');
+    return;
+  }
+
+  try {
+    setSalvandoItem(true);
+
+    let picture: string | undefined;
+
+    if (imagem) {
+      const extensao = imagem.name.split('.').pop();
+      picture = `${skuGerado}.${extensao}`;
+
+      const formData = new FormData();
+      formData.append('file', imagem, picture);
+
+      await fetch(`${import.meta.env.VITE_API_IMAGEM}/imagem`, {
+        method: 'POST',
+        body: formData
+      });
     }
 
-    try {
-      setSalvandoItem(true);
-      await itemAPI.create({
-        sku: skuGerado,
-        descricaoCompleta: descricaoCompleta,
-        descricaoEtiqueta: descricaoEtiqueta
-      });
-      message.success('Item criado no SAP com sucesso!');
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-      message.error(`Erro ao criar item no SAP: ${errorMessage}`);
-      console.error('Erro ao salvar item:', error);
-    } finally {
-      setSalvandoItem(false);
-    }
-  };
+    await itemAPI.create({
+      sku: skuGerado,
+      descricaoCompleta,
+      descricaoEtiqueta,
+      picture
+    });
+
+    setPicture(picture ?? null);
+
+    message.success('Item criado com sucesso!');
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Erro desconhecido';
+
+    message.error(`Erro ao criar item: ${errorMessage}`);
+    console.error(error);
+  } finally {
+    setSalvandoItem(false);
+  }
+};
+
+
+
 
   const handleAtualizar = async (campo: 'descricaoCompleta' | 'descricaoEtiqueta') => {
     try {
@@ -425,255 +431,435 @@ function AppContent() {
     return titulos[tipo] || 'Inserir Novo Item';
   };
 
+  const handleVoltar = () => {
+    setShowInputs(false);
+    setSkuGerado(null);
+    setDescricaoCompleta('');
+    setDescricaoEtiqueta('');
+    setImagem(null);
+    form.resetFields();
+  };
+
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
-      <div className="w-full max-w-6xl">
-        <Row gutter={24} style={{ alignItems: 'stretch' }}>
-          <Col xs={24} lg={12} style={{ display: 'flex' }}>
-            <Card className="w-full shadow-xl" style={{ borderRadius: '16px', border: 'none', display: 'flex', flexDirection: 'column' }} bodyStyle={{ padding: '32px', display: 'flex', flexDirection: 'column', flex: 1 }}>
-              <Title level={2} className="!mb-2 !text-gray-800 text-center">Gerador de SKU</Title>
+      <div className="w-full max-w-4xl">
+        {!showInputs ? (
+          <Card
+            className="w-full shadow-xl"
+            style={{
+              borderRadius: '16px',
+              border: 'none',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+            bodyStyle={{
+              padding: '32px',
+              display: 'flex',
+              flexDirection: 'column',
+              flex: 1
+            }}
+          >
+            <Title level={2} className="!mb-2 !text-gray-800 text-center">
+              Gerador de SKU
+            </Title>
 
-              <Form form={form} layout="vertical" size="large">
-        <Form.Item name="select1" label={<span className="text-base font-semibold">Artigo</span>}>
-          <Row gutter={8} wrap={false}>
-            <Col flex={1} style={{ minWidth: 0 }}>
-              <Select 
-                placeholder="Selecione" 
-                size="large" 
-                loading={loading}
-                value={select1}
-                onChange={(value) => setSelect1(value)}
+            <Form form={form} layout="vertical" size="large">
+              <Form.Item
+                name="select1"
+                label={<span className="text-base font-semibold">Artigo</span>}
               >
-                {artigoOptions.map(o => (
-                  <Option key={o.value} value={o.value}>{o.label}</Option>
-                ))}
-              </Select>
-            </Col>
-            <Col flex="none">
+                <Row gutter={8} wrap={false}>
+                  <Col flex={1} style={{ minWidth: 0 }}>
+                    <Select
+                      placeholder="Selecione"
+                      size="large"
+                      loading={loading}
+                      value={select1}
+                      onChange={value => setSelect1(value)}
+                    >
+                      {artigoOptions.map(o => (
+                        <Option key={o.value} value={o.value}>
+                          {o.label}
+                        </Option>
+                      ))}
+                    </Select>
+                  </Col>
+                  <Col flex="none">
+                    <Button
+                      type="default"
+                      htmlType="button"
+                      icon={<PlusOutlined />}
+                      onClick={() => handleAbrirModal('artigo')}
+                      size="large"
+                      style={{
+                        borderRadius: '8px',
+                        whiteSpace: 'nowrap',
+                        minWidth: '100px'
+                      }}
+                    >
+                      Inserir
+                    </Button>
+                  </Col>
+                </Row>
+              </Form.Item>
+
+              <Form.Item
+                name="select2"
+                label={<span className="text-base font-semibold">Metal Base</span>}
+              >
+                <Row gutter={8} wrap={false}>
+                  <Col flex={1} style={{ minWidth: 0 }}>
+                    <Select
+                      placeholder="Selecione"
+                      size="large"
+                      loading={loading}
+                      value={select2}
+                      onChange={value => setSelect2(value)}
+                    >
+                      {metalBaseOptions.map(o => (
+                        <Option key={o.value} value={o.value}>
+                          {o.label}
+                        </Option>
+                      ))}
+                    </Select>
+                  </Col>
+                  <Col flex="none">
+                    <Button
+                      type="default"
+                      htmlType="button"
+                      icon={<PlusOutlined />}
+                      onClick={() => handleAbrirModal('metalBase')}
+                      size="large"
+                      style={{
+                        borderRadius: '8px',
+                        whiteSpace: 'nowrap',
+                        minWidth: '100px'
+                      }}
+                    >
+                      Inserir
+                    </Button>
+                  </Col>
+                </Row>
+              </Form.Item>
+
+              <Form.Item
+                name="select3"
+                label={
+                  <span className="text-base font-semibold">
+                    Metal Secundário
+                  </span>
+                }
+              >
+                <Row gutter={8} wrap={false}>
+                  <Col flex={1} style={{ minWidth: 0 }}>
+                    <Select
+                      placeholder="Selecione"
+                      size="large"
+                      loading={loading}
+                      value={select3}
+                      onChange={value => setSelect3(value)}
+                    >
+                      {metalSecundarioOptions.map(o => (
+                        <Option key={o.value} value={o.value}>
+                          {o.label}
+                        </Option>
+                      ))}
+                    </Select>
+                  </Col>
+                  <Col flex="none">
+                    <Button
+                      type="default"
+                      htmlType="button"
+                      icon={<PlusOutlined />}
+                      onClick={() => handleAbrirModal('metalSecundario')}
+                      size="large"
+                      style={{
+                        borderRadius: '8px',
+                        whiteSpace: 'nowrap',
+                        minWidth: '100px'
+                      }}
+                    >
+                      Inserir
+                    </Button>
+                  </Col>
+                </Row>
+              </Form.Item>
+
+              <Form.Item
+                name="select4"
+                label={
+                  <span className="text-base font-semibold">
+                    Material Complementar
+                  </span>
+                }
+              >
+                <Row gutter={8} wrap={false}>
+                  <Col flex={1} style={{ minWidth: 0 }}>
+                    <Select
+                      allowClear
+                      size="large"
+                      loading={loading}
+                      value={select4}
+                      onChange={value => setSelect4(value)}
+                    >
+                      {materialComplementarOptions.map(o => (
+                        <Option key={o.value} value={o.value}>
+                          {o.label}
+                        </Option>
+                      ))}
+                    </Select>
+                  </Col>
+                  <Col flex="none">
+                    <Button
+                      type="default"
+                      htmlType="button"
+                      icon={<PlusOutlined />}
+                      onClick={() => handleAbrirModal('materialComplementar')}
+                      size="large"
+                      style={{
+                        borderRadius: '8px',
+                        whiteSpace: 'nowrap',
+                        minWidth: '100px'
+                      }}
+                    >
+                      Inserir
+                    </Button>
+                  </Col>
+                </Row>
+              </Form.Item>
+
+              <Form.Item
+                name="select5"
+                label={<span className="text-base font-semibold">Cor</span>}
+              >
+                <Row gutter={8} wrap={false}>
+                  <Col flex={1} style={{ minWidth: 0 }}>
+                    <Select
+                      allowClear
+                      size="large"
+                      loading={loading}
+                      value={select5}
+                      onChange={value => setSelect5(value)}
+                    >
+                      {corOptions.map(o => (
+                        <Option key={o.value} value={o.value}>
+                          {o.label}
+                        </Option>
+                      ))}
+                    </Select>
+                  </Col>
+                  <Col flex="none">
+                    <Button
+                      type="default"
+                      htmlType="button"
+                      icon={<PlusOutlined />}
+                      onClick={() => handleAbrirModal('cor')}
+                      size="large"
+                      style={{
+                        borderRadius: '8px',
+                        whiteSpace: 'nowrap',
+                        minWidth: '100px'
+                      }}
+                    >
+                      Inserir
+                    </Button>
+                  </Col>
+                </Row>
+              </Form.Item>
+
+              <Button
+                type="primary"
+                block
+                icon={<BarcodeOutlined />}
+                onClick={handleGerarSKU}
+                size="large"
+                className="!rounded-lg !h-12 !text-base !font-medium shadow-md hover:shadow-lg transition-all"
+              >
+                Gerar SKU e descrições
+              </Button>
+            </Form>
+          </Card>
+        ) : (
+          <Card
+            className="w-full shadow-xl"
+            style={{
+              borderRadius: '16px',
+              border: 'none',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+            bodyStyle={{
+              padding: '32px',
+              display: 'flex',
+              flexDirection: 'column',
+              flex: 1
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '24px'
+              }}
+            >
               <Button
                 type="default"
-                htmlType="button"
-                icon={<PlusOutlined />}
-                onClick={() => handleAbrirModal('artigo')}
+                icon={<ArrowLeftOutlined />}
+                onClick={handleVoltar}
                 size="large"
-                style={{ borderRadius: '8px', whiteSpace: 'nowrap', minWidth: '100px' }}
+                className="!rounded-lg"
               >
-                Inserir
+                Voltar
               </Button>
-            </Col>
-          </Row>
-        </Form.Item>
-
-        <Form.Item name="select2" label={<span className="text-base font-semibold">Metal Base</span>}>
-          <Row gutter={8} wrap={false}>
-            <Col flex={1} style={{ minWidth: 0 }}>
-              <Select 
-                placeholder="Selecione" 
-                size="large" 
-                loading={loading}
-                value={select2}
-                onChange={(value) => setSelect2(value)}
+              <Title
+                level={2}
+                className="!mb-0 !text-gray-800 text-center"
+                style={{ flex: 1 }}
               >
-                {metalBaseOptions.map(o => (
-                  <Option key={o.value} value={o.value}>{o.label}</Option>
-                ))}
-              </Select>
-            </Col>
-            <Col flex="none">
+                SKU e Descrições
+              </Title>
+              <div style={{ width: '100px' }} />
+            </div>
+
+            {skuGerado && (
               <Button
-                type="default"
+                type="primary"
                 htmlType="button"
-                icon={<PlusOutlined />}
-                onClick={() => handleAbrirModal('metalBase')}
+                icon={<LinkOutlined />}
+                onClick={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleCriarItemSAP();
+                }}
+                block
                 size="large"
-                style={{ borderRadius: '8px', whiteSpace: 'nowrap', minWidth: '100px' }}
+                loading={salvandoItem}
+                className="!rounded-lg !h-12 !text-base !font-medium shadow-md hover:shadow-lg transition-all !mb-6"
               >
-                Inserir
+                {skuGerado}
               </Button>
-            </Col>
-          </Row>
-        </Form.Item>
+            )}
 
-        <Form.Item name="select3" label={<span className="text-base font-semibold">Metal Secundário</span>}>
-          <Row gutter={8} wrap={false}>
-            <Col flex={1} style={{ minWidth: 0 }}>
-              <Select 
-                placeholder="Selecione" 
-                size="large" 
-                loading={loading}
-                value={select3}
-                onChange={(value) => setSelect3(value)}
+            <Form form={form} layout="vertical" size="large">
+              <Form.Item
+                name="descricaoCompleta"
+                label={
+                  <span className="text-base font-semibold">
+                    Descrição Completa
+                  </span>
+                }
               >
-                {metalSecundarioOptions.map(o => (
-                  <Option key={o.value} value={o.value}>{o.label}</Option>
-                ))}
-              </Select>
-            </Col>
-            <Col flex="none">
-              <Button
-                type="default"
-                htmlType="button"
-                icon={<PlusOutlined />}
-                onClick={() => handleAbrirModal('metalSecundario')}
-                size="large"
-                style={{ borderRadius: '8px', whiteSpace: 'nowrap', minWidth: '100px' }}
-              >
-                Inserir
-              </Button>
-            </Col>
-          </Row>
-        </Form.Item>
-
-        <Form.Item name="select4" label={<span className="text-base font-semibold">Material Complementar</span>}>
-          <Row gutter={8} wrap={false}>
-            <Col flex={1} style={{ minWidth: 0 }}>
-              <Select 
-                allowClear 
-                size="large" 
-                loading={loading}
-                value={select4}
-                onChange={(value) => setSelect4(value)}
-              >
-                {materialComplementarOptions.map(o => (
-                  <Option key={o.value} value={o.value}>{o.label}</Option>
-                ))}
-              </Select>
-            </Col>
-            <Col flex="none">
-              <Button
-                type="default"
-                htmlType="button"
-                icon={<PlusOutlined />}
-                onClick={() => handleAbrirModal('materialComplementar')}
-                size="large"
-                style={{ borderRadius: '8px', whiteSpace: 'nowrap', minWidth: '100px' }}
-              >
-                Inserir
-              </Button>
-            </Col>
-          </Row>
-        </Form.Item>
-
-        <Form.Item name="select5" label={<span className="text-base font-semibold">Cor</span>}>
-          <Row gutter={8} wrap={false}>
-            <Col flex={1} style={{ minWidth: 0 }}>
-              <Select 
-                allowClear 
-                size="large" 
-                loading={loading}
-                value={select5}
-                onChange={(value) => setSelect5(value)}
-              >
-                {corOptions.map(o => (
-                  <Option key={o.value} value={o.value}>{o.label}</Option>
-                ))}
-              </Select>
-            </Col>
-            <Col flex="none">
-              <Button
-                type="default"
-                htmlType="button"
-                icon={<PlusOutlined />}
-                onClick={() => handleAbrirModal('cor')}
-                size="large"
-                style={{ borderRadius: '8px', whiteSpace: 'nowrap', minWidth: '100px' }}
-              >
-                Inserir
-              </Button>
-            </Col>
-          </Row>
-        </Form.Item>
-
-                <Button 
-                  type="primary" 
-                  block 
-                  icon={<BarcodeOutlined />} 
-                  onClick={handleGerarSKU} 
-                  size="large" 
-                  className="!rounded-lg !h-12 !text-base !font-medium shadow-md hover:shadow-lg transition-all"
-                >
-                  Gerar SKU e descrições
-                </Button>
-
-              </Form>
-            </Card>
-          </Col>
-
-          <Col xs={24} lg={12} style={{ display: 'flex' }}>
-            <Card className="w-full shadow-xl" style={{ borderRadius: '16px', border: 'none', display: 'flex', flexDirection: 'column' }} bodyStyle={{ padding: '32px', display: 'flex', flexDirection: 'column', flex: 1 }}>
-              <Title level={2} className="!mb-2 !text-gray-800 text-center">SKU e Descrições</Title>
-
-              {skuGerado && (
-                <Button
-                  type="primary"
-                  htmlType="button"
-                  icon={<LinkOutlined />}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleCriarItemSAP();
-                  }}
-                  block
+                <Input.TextArea
+                  rows={4}
                   size="large"
-                  loading={salvandoItem}
-                  className="!rounded-lg !h-12 !text-base !font-medium shadow-md hover:shadow-lg transition-all !mb-6"
+                  value={descricaoCompleta}
+                  onChange={e => setDescricaoCompleta(e.target.value)}
+                />
+              </Form.Item>
+              <Form.Item style={{ textAlign: 'right', marginBottom: '24px' }}>
+                <Button
+                  type="default"
+                  icon={<EditOutlined />}
+                  onClick={() => handleAtualizar('descricaoCompleta')}
+                  size="large"
+                  className="!rounded-lg"
                 >
-                  {skuGerado}
+                  Atualizar
                 </Button>
-              )}
+              </Form.Item>
 
-              {showInputs && (
-                <Form form={form} layout="vertical" size="large">
-                  <Form.Item name="descricaoCompleta" label={<span className="text-base font-semibold">Descrição Completa</span>}>
-                    <Input.TextArea 
-                      rows={4} 
-                      size="large"
-                      value={descricaoCompleta}
-                      onChange={(e) => setDescricaoCompleta(e.target.value)}
-                    />
-                  </Form.Item>
-                  <Form.Item style={{ textAlign: 'right', marginBottom: '24px' }}>
-                    <Button
-                      type="default"
-                      icon={<EditOutlined />}
-                      onClick={() => handleAtualizar('descricaoCompleta')}
-                      size="large"
-                      className="!rounded-lg"
-                    >
-                      Atualizar
-                    </Button>
-                  </Form.Item>
+              <Form.Item
+                name="descricaoEtiqueta"
+                label={
+                  <span className="text-base font-semibold">
+                    Descrição Etiqueta
+                  </span>
+                }
+              >
+                <Input
+                  maxLength={20}
+                  size="large"
+                  value={descricaoEtiqueta}
+                  onChange={e => setDescricaoEtiqueta(e.target.value)}
+                />
+              </Form.Item>
+              <Form.Item style={{ textAlign: 'right', marginBottom: '24px' }}>
+                <Button
+                  type="default"
+                  icon={<EditOutlined />}
+                  onClick={() => handleAtualizar('descricaoEtiqueta')}
+                  size="large"
+                  className="!rounded-lg"
+                >
+                  Atualizar
+                </Button>
+              </Form.Item>
 
-                  <Form.Item name="descricaoEtiqueta" label={<span className="text-base font-semibold">Descrição Etiqueta</span>}>
-                    <Input 
-                      maxLength={20} 
-                      size="large"
-                      value={descricaoEtiqueta}
-                      onChange={(e) => setDescricaoEtiqueta(e.target.value)}
-                    />
-                  </Form.Item>
-                  <Form.Item style={{ textAlign: 'right', marginBottom: '0' }}>
-                    <Button
-                      type="default"
-                      icon={<EditOutlined />}
-                      onClick={() => handleAtualizar('descricaoEtiqueta')}
-                      size="large"
-                      className="!rounded-lg"
-                    >
-                      Atualizar
-                    </Button>
-                  </Form.Item>
-                </Form>
-              )}
+              <Form.Item 
+  name="imagem" 
+  label={<span className="text-base font-semibold">Imagem (Opcional)</span>}
+>
+  {imagem ? (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '12px',
+        border: '1px solid #d9d9d9',
+        borderRadius: '8px',
+        backgroundColor: '#fafafa'
+      }}
+    >
+      <span style={{ flex: 1, color: '#595959' }}>
+        {imagem.name}
+      </span>
 
-              {!skuGerado && (
-                <div className="text-center text-gray-400 py-8">
-                  <p>Gere o SKU para ver as informações aqui</p>
-                </div>
-              )}
-            </Card>
-          </Col>
-        </Row>
+      <Button
+        type="default"
+        danger
+        icon={<DeleteOutlined />}
+        onClick={() => {
+          setImagem(null);
+          form.setFieldsValue({ imagem: undefined });
+        }}
+        size="large"
+        className="!rounded-lg"
+      >
+        Remover
+      </Button>
+    </div>
+  ) : (
+    <Upload
+      accept="image/*"
+      beforeUpload={(file) => {
+        setImagem(file); // 👈 File guardado
+        return false;    // 👈 impede upload automático
+      }}
+      showUploadList={false}
+      maxCount={1}
+    >
+      <Button
+        icon={<UploadOutlined />}
+        size="large"
+        className="!rounded-lg"
+        block
+      >
+        Selecionar Imagem
+      </Button>
+    </Upload>
+  )}
+</Form.Item>
+            </Form>
+
+            {!skuGerado && (
+              <div className="text-center text-gray-400 py-8">
+                <p>Gere o SKU para ver as informações aqui</p>
+              </div>
+            )}
+          </Card>
+        )}
       </div>
 
       <Modal
