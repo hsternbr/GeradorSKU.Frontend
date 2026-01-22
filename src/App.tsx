@@ -372,7 +372,7 @@ function AppContent() {
       descricaoEtiqueta,
       picture
     });
-
+ 
     setPicture(picture ?? null);
 
     message.success('Item criado com sucesso!');
