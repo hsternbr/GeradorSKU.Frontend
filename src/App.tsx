@@ -205,7 +205,7 @@ function AppContent() {
 
     // Se ainda for muito longo, trunca e adiciona...
     if (resultado.length > 20) {
-      resultado = resultado.substring(0, 17) + '...';
+      resultado = resultado.substring(0, 17);
     }
 
     return resultado;
