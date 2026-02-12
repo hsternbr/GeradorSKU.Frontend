@@ -22,7 +22,7 @@ $DOCKER_COMPOSE_FILE = "docker-compose.yml"   # Nome do arquivo docker-compose
 $API_CONTAINER_NAME = "GeradorSKU.Frontend"               # Nome do container da API
 
 # CONFIGURAÇÕES DA APLICAÇÃO
-$APP_PORT = 4120                           # Porta da aplicação
+$APP_PORT = 4021                         # Porta da aplicação
 $HEALTH_CHECK_PORT = 80                       # Porta para health check
 $STARTUP_WAIT_TIME = 15                       # Tempo de espera após subir containers (segundos)
 $LOG_TAIL_LINES = 150                          # Número de linhas de log para mostrar
