@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState,  useEffect } from 'react';
 import {
   Form,
   Select,
@@ -104,9 +104,9 @@ function AppContent() {
   const [descricaoCompleta, setDescricaoCompleta] = useState<string>('');
   const [descricaoEtiqueta, setDescricaoEtiqueta] = useState<string>('');
   const [imagem, setImagem] = useState<File | null>(null);
-  const [pictureFile, setPictureFile] = useState<File | null>(null);
-  const [picture, setPicture] = useState<string | null>(null);
-  const [NCMCode, setNCMCode] = useState<string | null>(null);
+  
+ 
+ 
   const [showInputs, setShowInputs] = useState(false);
   const [skuGerado, setSkuGerado] = useState<string | null>(null);
   const [salvandoItem, setSalvandoItem] = useState(false);
@@ -373,7 +373,7 @@ function AppContent() {
       picture
     });
  
-    setPicture(picture ?? null);
+    
 
     message.success('Item criado com sucesso!');
   } catch (error) {
