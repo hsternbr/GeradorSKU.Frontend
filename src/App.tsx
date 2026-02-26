@@ -11,7 +11,8 @@ import {
   Col,
   App,
   Modal,
-  Upload
+  Upload,
+  Table
 } from 'antd';
 import {
   BarcodeOutlined,
@@ -31,7 +32,8 @@ import {
   corAPI,
   itemAPI,
   itemAPIUpdate,
-  sequenceAPI
+  sequenceAPI,
+  uploadExcelAPI
 } from './services/api';
 import { gerarSKU } from './utils/gerarSKU';
 
@@ -104,9 +106,8 @@ function AppContent() {
   const [descricaoCompleta, setDescricaoCompleta] = useState<string>('');
   const [descricaoEtiqueta, setDescricaoEtiqueta] = useState<string>('');
   const [imagem, setImagem] = useState<File | null>(null);
-  
- 
- 
+  const [step, setStep] = useState<'lista' | 'form'>('lista');
+
   const [showInputs, setShowInputs] = useState(false);
   const [skuGerado, setSkuGerado] = useState<string | null>(null);
   const [salvandoItem, setSalvandoItem] = useState(false);
@@ -114,6 +115,13 @@ function AppContent() {
   const [modalOpen, setModalOpen] = useState<any>({});
   const [currentModalType, setCurrentModalType] = useState('');
   const [loading, setLoading] = useState(true);
+  const [excelUploadModalOpen, setExcelUploadModalOpen] = useState(false);
+  const [uploadingExcel, setUploadingExcel] = useState(false);
+  const [excelPreviewColumns, setExcelPreviewColumns] = useState<string[]>([]);
+  const [excelPreviewData, setExcelPreviewData] = useState<any[]>([]);
+  const [excelFileSelected, setExcelFileSelected] = useState<File | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [codigoFornecedor, setCodigoFornecedor] = useState<string>('');
   
 
   // Carregar dados do backend
@@ -149,6 +157,30 @@ function AppContent() {
 
     carregarDados();
   }, [message]);
+
+  type ListaItemRow = {
+    key: string;
+    codigo: string;
+    descricao: string;
+  };
+
+  const listaItensData: ListaItemRow[] = [
+    {
+      key: '1',
+      codigo: 'ITEM001',
+      descricao: 'Item de exemplo 1'
+    },
+    {
+      key: '2',
+      codigo: 'ITEM002',
+      descricao: 'Item de exemplo 2'
+    },
+    {
+      key: '3',
+      codigo: 'ITEM003',
+      descricao: 'Item de exemplo 3'
+    }
+  ];
 
   const artigoOptions = Object.entries(labels.artigo).map(([value, label]) => ({ value, label }));
   const metalBaseOptions = Object.entries(labels.metalBase).map(([value, label]) => ({ value, label }));
@@ -440,10 +472,185 @@ function AppContent() {
     form.resetFields();
   };
 
+  // Função para apenas ler e mostrar pré-visualização (sem salvar)
+  const handlePreviewExcel = async (file: File) => {
+    try {
+      setPreviewLoading(true);
+      
+      // Validar extensão do arquivo
+      const validExtensions = ['.xlsx', '.xls'];
+      const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+      
+      if (!validExtensions.includes(fileExtension)) {
+        message.error('Por favor, selecione um arquivo Excel (.xlsx ou .xls)');
+        setExcelFileSelected(null);
+        return false;
+      }
+
+      // Guarda o arquivo para usar depois no upload
+      setExcelFileSelected(file);
+
+      // Cria FormData para enviar o arquivo
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      console.log('📤 Enviando arquivo para preview:', {
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        formDataKeys: Array.from(formData.keys())
+      });
+
+      // Faz upload apenas para pré-visualização (backend retorna dados sem salvar)
+      const result: any = await uploadExcelAPI.preview(formData);
+
+      // Espera-se que o backend retorne { message, totalRows, data }
+      const rows = Array.isArray(result?.data) ? result.data : [];
+
+      if (!rows.length) {
+        message.warning('Arquivo processado, mas nenhuma linha foi encontrada.');
+        setExcelPreviewColumns([]);
+        setExcelPreviewData([]);
+        setExcelFileSelected(null);
+        return false;
+      }
+
+      const firstRow = rows[0] || {};
+      const columns = Object.keys(firstRow).filter(
+        key => key !== '__rowIndex' && key !== 'pic.' && !key.toLowerCase().includes('pic')
+      );
+
+      const previewRows = rows.slice(0, 10).map((row: any, index: number) => {
+        const filteredRow: any = { key: row.__rowIndex ?? index };
+        columns.forEach(col => {
+          filteredRow[col] = row[col];
+        });
+        return filteredRow;
+      });
+
+      setExcelPreviewColumns(columns);
+      setExcelPreviewData(previewRows);
+
+      message.success('Arquivo processado! Revise a pré-visualização e confirme para importar.');
+
+      return false; // Impede o upload automático do Ant Design
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      message.error(`Erro ao processar Excel: ${errorMessage}`);
+      console.error('Erro ao processar Excel:', error);
+      setExcelFileSelected(null);
+      return false;
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // Função para confirmar e fazer o upload real (salvar no banco)
+  const handleConfirmUpload = async () => {
+    if (!excelFileSelected) {
+      message.warning('Nenhum arquivo selecionado');
+      return;
+    }
+
+    // Validar código do fornecedor
+    if (!codigoFornecedor || codigoFornecedor.trim() === '') {
+      message.error('Por favor, informe o código do fornecedor');
+      return;
+    }
+
+    try {
+      setUploadingExcel(true);
+      
+      // Usa o código do fornecedor informado pelo usuário
+      // O backend vai buscar o fornecedor_id pelo código
+      const usuarioId = 'SEU_USUARIO_ID_AQUI'; // TODO: Obter do contexto/estado da aplicação
+      
+      const result: any = await uploadExcelAPI.upload(excelFileSelected, codigoFornecedor.trim(), usuarioId);
+      
+      message.success(`Arquivo importado com sucesso! ${result.saved || result.totalRows || 0} itens salvos.`);
+      
+      // Limpar estados
+      setExcelFileSelected(null);
+      setExcelPreviewColumns([]);
+      setExcelPreviewData([]);
+      setCodigoFornecedor('');
+      setExcelUploadModalOpen(false);
+      
+      // Aqui você pode recarregar a tabela principal se necessário
+      // await carregarDadosTabela();
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      message.error(`Erro ao importar: ${errorMessage}`);
+      console.error('Erro ao importar:', error);
+    } finally {
+      setUploadingExcel(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
       <div className="w-full max-w-4xl">
-        {!showInputs ? (
+        {step === 'lista' ? (
+          <Card
+            className="w-full shadow-xl"
+            style={{
+              borderRadius: '16px',
+              border: 'none',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+            bodyStyle={{
+              padding: '32px',
+              display: 'flex',
+              flexDirection: 'column',
+              flex: 1
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <Title level={2} className="!mb-0 !text-gray-800">
+                Itens cadastrados
+              </Title>
+              <Button
+                type="primary"
+                icon={<UploadOutlined />}
+                onClick={() => setExcelUploadModalOpen(true)}
+                size="large"
+                className="!rounded-lg"
+              >
+                Importar Excel
+              </Button>
+            </div>
+
+            <Table
+              bordered
+              pagination={{ pageSize: 5 }}
+              dataSource={listaItensData}
+              columns={[
+                {
+                  title: 'Código',
+                  dataIndex: 'codigo',
+                  key: 'codigo',
+                  width: '30%'
+                },
+                {
+                  title: 'Descrição',
+                  dataIndex: 'descricao',
+                  key: 'descricao'
+                }
+              ]}
+              onRow={() => ({
+                onClick: () => {
+                  // Aqui no futuro você pode passar dados do item para o formulário
+                  setStep('form');
+                }
+              })}
+              rowClassName={() =>
+                'cursor-pointer hover:bg-blue-50 transition-colors'
+              }
+            />
+          </Card>
+        ) : !showInputs ? (
           <Card
             className="w-full shadow-xl"
             style={{
@@ -899,6 +1106,171 @@ function AppContent() {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        centered
+        open={excelUploadModalOpen}
+        title="Importar Excel"
+        onCancel={() => {
+          setExcelUploadModalOpen(false);
+          setExcelPreviewColumns([]);
+          setExcelPreviewData([]);
+          setExcelFileSelected(null);
+          setCodigoFornecedor('');
+        }}
+        footer={null}
+        okButtonProps={{ className: '!rounded-lg' }}
+        cancelButtonProps={{ className: '!rounded-lg' }}
+        width={900}
+      >
+        <div style={{ padding: '16px 0' }}>
+          <div style={{ marginBottom: '24px' }}>
+            <Title level={5} className="!mb-2 !text-gray-800">
+              Código do Fornecedor *
+            </Title>
+            <Input
+              placeholder="Digite o código do fornecedor"
+              value={codigoFornecedor}
+              onChange={(e) => setCodigoFornecedor(e.target.value)}
+              size="large"
+              className="!rounded-lg"
+              disabled={previewLoading || uploadingExcel}
+              required
+            />
+            <div style={{ marginTop: '8px', color: '#8c8c8c', fontSize: '12px' }}>
+              * Campo obrigatório para importação
+            </div>
+          </div>
+
+          {!excelPreviewColumns.length ? (
+            <>
+              <Upload
+                accept=".xlsx,.xls"
+                beforeUpload={(file) => {
+                  // Validar código do fornecedor antes de processar
+                  if (!codigoFornecedor || codigoFornecedor.trim() === '') {
+                    message.error('Por favor, informe o código do fornecedor antes de selecionar o arquivo');
+                    return false;
+                  }
+                  handlePreviewExcel(file);
+                  return false; // Impede upload automático
+                }}
+                showUploadList={false}
+                maxCount={1}
+                disabled={!codigoFornecedor || codigoFornecedor.trim() === ''}
+              >
+                <Button
+                  type="primary"
+                  icon={<UploadOutlined />}
+                  loading={previewLoading}
+                  size="large"
+                  block
+                  className="!rounded-lg"
+                  disabled={!codigoFornecedor || codigoFornecedor.trim() === '' || previewLoading}
+                >
+                  {previewLoading ? 'Processando...' : 'Selecionar arquivo Excel'}
+                </Button>
+              </Upload>
+              <div style={{ marginTop: '16px', color: '#8c8c8c', fontSize: '12px' }}>
+                Formatos aceitos: .xlsx, .xls | Cabeçalho na linha 19
+              </div>
+            </>
+          ) : (
+            <>
+              {excelFileSelected && (
+                <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#f0f0f0', borderRadius: '8px' }}>
+                  <strong>Arquivo selecionado:</strong> {excelFileSelected.name}
+                </div>
+              )}
+              <div style={{ marginBottom: '16px' }}>
+                <Title level={5} className="!mb-2 !text-gray-800">
+                  Pré-visualização (primeiras 10 linhas)
+                </Title>
+                <Table
+                  size="small"
+                  bordered
+                  scroll={{ x: true }}
+                  pagination={false}
+                  dataSource={excelPreviewData}
+                  columns={excelPreviewColumns.map(col => {
+                    // Se for a coluna de imagem, renderiza a imagem
+                    const isImageColumn = col.toLowerCase().includes('pic') || 
+                                         col.toLowerCase().includes('image') || 
+                                         col.toLowerCase().includes('picture');
+                    
+                    return {
+                      title: col,
+                      dataIndex: col,
+                      key: col,
+                      render: (text: any) => {
+                        if (text === null || text === undefined || text === '') {
+                          return '-';
+                        }
+                        
+                        // Se for coluna de imagem e o valor for base64 ou URL de imagem
+                        if (isImageColumn) {
+                          const isBase64 = typeof text === 'string' && 
+                                          (text.startsWith('data:image/') || 
+                                           text.startsWith('data:image/png') ||
+                                           text.startsWith('data:image/jpeg') ||
+                                           text.startsWith('data:image/jpg'));
+                          
+                          if (isBase64 || (typeof text === 'string' && (text.startsWith('http://') || text.startsWith('https://')))) {
+                            return (
+                              <img 
+                                src={text} 
+                                alt="Preview" 
+                                style={{ 
+                                  maxWidth: '80px', 
+                                  maxHeight: '80px', 
+                                  objectFit: 'contain',
+                                  borderRadius: '4px'
+                                }} 
+                                onError={(e) => {
+                                  // Se a imagem falhar ao carregar, mostra o texto
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                  (e.target as HTMLImageElement).parentElement!.textContent = String(text);
+                                }}
+                              />
+                            );
+                          }
+                        }
+                        
+                        return String(text);
+                      }
+                    };
+                  })}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px' }}>
+                <Button
+                  onClick={() => {
+                    setExcelPreviewColumns([]);
+                    setExcelPreviewData([]);
+                    setExcelFileSelected(null);
+                    setCodigoFornecedor('');
+                  }}
+                  size="large"
+                  className="!rounded-lg"
+                >
+                  Selecionar outro arquivo
+                </Button>
+                <Button
+                  type="primary"
+                  icon={<UploadOutlined />}
+                  loading={uploadingExcel}
+                  onClick={handleConfirmUpload}
+                  disabled={!codigoFornecedor || codigoFornecedor.trim() === ''}
+                  size="large"
+                  className="!rounded-lg"
+                >
+                  {uploadingExcel ? 'Importando...' : 'Confirmar e Importar'}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </div>
   );

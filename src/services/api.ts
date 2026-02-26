@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://10.1.0.49:4020';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4020';
 
 // Tipos para as respostas da API
 export interface Artigo {
@@ -209,9 +209,16 @@ export const sequenceAPI = {
 // Função auxiliar para fazer upload de arquivos
 async function uploadFile(endpoint: string, formData: FormData): Promise<any> {
   try {
+    console.log('📤 uploadFile - Enviando para:', `${API_BASE_URL}${endpoint}`);
+    console.log('📦 FormData entries:', Array.from(formData.entries()).map(([key, value]) => ({
+      key,
+      value: value instanceof File ? { name: value.name, size: value.size, type: value.type } : value
+    })));
+    
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
       body: formData,
+      // Não definir Content-Type manualmente - o navegador define automaticamente com boundary
     });
 
     const text = await response.text();
@@ -255,5 +262,24 @@ export const uploadImagemAPI = {
     return uploadFile('/api/upload/imagem', formData);
   },
 };
+
+// API de Upload de Excel
+export const uploadExcelAPI = {
+  preview: (formData: FormData) => {
+    return uploadFile('/api/upload/excel/preview', formData);
+  },
+  upload: (file: File, codigoFornecedor?: string, usuarioId?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (codigoFornecedor) {
+      formData.append('codigo_fornecedor', codigoFornecedor);
+    }
+    if (usuarioId) {
+      formData.append('usuario_id', usuarioId);
+    }
+    return uploadFile('/api/upload/excel', formData);
+  },
+};
+
 
 

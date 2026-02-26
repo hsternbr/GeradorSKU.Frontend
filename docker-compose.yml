@@ -6,7 +6,7 @@ services:
       context: .
     container_name: ${CONTAINER_NAME}
     ports:
-      - "${HOST_PORT}:4021" # Porta 3002 no host para 3000 no container
+      - "4021:4021" # Porta 3002 no host para 3000 no container
     env_file:
       - .env
     environment:

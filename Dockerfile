@@ -1,4 +1,4 @@
-FROM node:18-alpine AS build
+FROM node:current-alpine
 
 WORKDIR /app
 
@@ -17,3 +17,5 @@ RUN npm run build
 # Exponha a porta 80 para o contêiner
 EXPOSE 80
 
+
+CMD ["npm", "run", "start"]
