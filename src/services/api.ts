@@ -36,6 +36,21 @@ export interface Cor {
   datacriacao: Date;
 }
 
+export interface Fornecedor {
+  id: number;
+  codigo_sap: string;
+  nome: string;
+}
+
+// Itens de fornecedor (tabela lume_item_fornecedor)
+export interface ItemFornecedor {
+  id: number;
+  codigo_fornecedor: string;
+  caracteristicas: string | null;
+  referencia_fornecedor: string | null;
+  imagem_path: string | null;
+}
+
 // Função auxiliar para fazer requisições
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   try {
@@ -164,6 +179,11 @@ export const corAPI = {
     }),
 };
 
+// API de Fornecedores
+export const fornecedorAPI = {
+  getAll: () => fetchAPI<Fornecedor[]>('/api/fornecedores'),
+};
+
 // Interface para Item
 export interface Item {
   sku: string;
@@ -203,6 +223,16 @@ export const sequenceAPI = {
   getNextSku: () =>
     fetchAPI<{ sequenceFormatada: string }>('/api/sequence/sku', {
       method: 'GET',
+    }),
+};
+
+// API de itens de fornecedor (lume_item_fornecedor)
+export const itemFornecedorAPI = {
+  getAll: () => fetchAPI<ItemFornecedor[]>('/api/itens-fornecedor'),
+  update: (id: number, data: any) =>
+    fetchAPI<ItemFornecedor>(`/api/itens-fornecedor/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
     }),
 };
 
