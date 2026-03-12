@@ -190,12 +190,18 @@ export interface Item {
   descricaoCompleta: string;
   descricaoEtiqueta: string;
   picture?: string;
+  itemFornecedorId?: number;
 }
 
 // API de Items - usando a mesma função fetchAPI
 export const itemAPI = {
-  
-  create: (data: { sku: string; descricaoCompleta: string; descricaoEtiqueta: string; picture?: string }) =>
+  create: (data: {
+    sku: string;
+    descricaoCompleta: string;
+    descricaoEtiqueta: string;
+    picture?: string;
+    itemFornecedorId?: number;
+  }) =>
     fetchAPI<Item>('/api/items', {
       method: 'POST',
       headers: {

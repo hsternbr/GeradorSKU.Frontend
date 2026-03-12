@@ -146,7 +146,6 @@ function AppContent() {
           materiais,
           cores,
           itens,
-          fornecedoresResponse,
         ] = await Promise.all([
           artigoAPI.getAll(),
           metalBaseAPI.getAll(),
@@ -154,7 +153,6 @@ function AppContent() {
           materialAPI.getAll(),
           corAPI.getAll(),
           itemFornecedorAPI.getAll(),
-          fornecedorAPI.getAll(),
         ]);
 
         // Mapear dados do backend para o formato esperado
@@ -168,7 +166,14 @@ function AppContent() {
 
         setLabels(novoLabels);
         setItensFornecedor(itens);
-        setFornecedores(fornecedoresResponse);
+
+        // Carregar fornecedores em uma chamada separada, para não quebrar a tabela caso falhe
+        try {
+          const fornecedoresResponse = await fornecedorAPI.getAll();
+          setFornecedores(fornecedoresResponse);
+        } catch (err) {
+          console.error('Erro ao carregar fornecedores:', err);
+        }
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
         message.error('Erro ao carregar dados do servidor. Usando dados padrão.');
@@ -406,7 +411,8 @@ function AppContent() {
       sku: skuGerado,
       descricaoCompleta,
       descricaoEtiqueta,
-      picture
+      picture,
+      itemFornecedorId: selectedItemFornecedorId ?? undefined,
     });
     
     // Atualizar referencia_fornecedor no lume_item_fornecedor vinculado
