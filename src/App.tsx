@@ -117,6 +117,9 @@ function AppContent() {
   const [skuGerado, setSkuGerado] = useState<string | null>(null);
   const [salvandoItem, setSalvandoItem] = useState(false);
   const [labels, setLabels] = useState(initialLabels);
+  const [artigoIdByCodigo, setArtigoIdByCodigo] = useState<Record<string, number>>({});
+  const [metalBaseIdByCodigo, setMetalBaseIdByCodigo] = useState<Record<string, number>>({});
+  const [metalSecundarioIdByCodigo, setMetalSecundarioIdByCodigo] = useState<Record<string, number>>({});
   const [modalOpen, setModalOpen] = useState<any>({});
   const [currentModalType, setCurrentModalType] = useState('');
   const [loading, setLoading] = useState(true);
@@ -158,13 +161,42 @@ function AppContent() {
         // Mapear dados do backend para o formato esperado
         const novoLabels = {
           artigo: Object.fromEntries(artigos.map(a => [a.codigo, a.nome])),
-          metalBase: Object.fromEntries(metaisBase.map(m => [String(m.id), m.nome])),
-          metalSecundario: Object.fromEntries(metaisSecundarios.map(m => [m.codigo, m.nome])),
+          metalBase: Object.fromEntries(
+            metaisBase
+              .filter(m => m.codigo && m.nome)
+              .map(m => [String(m.codigo), String(m.nome)])
+          ),
+          metalSecundario: Object.fromEntries(
+            metaisSecundarios
+              .filter(m => m.codigo && m.nome)
+              .map(m => [String(m.codigo), String(m.nome)])
+          ),
           materialComplementar: Object.fromEntries(materiais.map(m => [m.codigo, m.nome])),
           cor: Object.fromEntries(cores.map(c => [String(c.id), c.nome]))
         };
 
         setLabels(novoLabels);
+        setArtigoIdByCodigo(
+          Object.fromEntries(
+            artigos
+              .filter(a => a.codigo && a.id !== undefined && a.id !== null)
+              .map(a => [a.codigo, Number(a.id)])
+          )
+        );
+        setMetalBaseIdByCodigo(
+          Object.fromEntries(
+            metaisBase
+              .filter(m => m.codigo && m.id !== undefined && m.id !== null)
+              .map(m => [String(m.codigo), Number(m.id)])
+          )
+        );
+        setMetalSecundarioIdByCodigo(
+          Object.fromEntries(
+            metaisSecundarios
+              .filter(m => m.codigo && m.id !== undefined && m.id !== null)
+              .map(m => [String(m.codigo), Number(m.id)])
+          )
+        );
         setItensFornecedor(itens);
 
         // Carregar fornecedores em uma chamada separada, para não quebrar a tabela caso falhe
@@ -420,12 +452,9 @@ function AppContent() {
       try {
         await itemFornecedorAPI.update(selectedItemFornecedorId, {
           referencia_fornecedor: skuGerado,
-          // Códigos/IDs usados para mapear artigo/metal/material/cor no backend
-          artigo_codigo: select1,
-          metal_base_id: select2,
-          metal_secundario_codigo: select3,
-          material_codigo: select4,
-          cor_id_num: select5,
+          artigo_id: select1 ? artigoIdByCodigo[select1] : undefined,
+          metal_id: select2 ? metalBaseIdByCodigo[select2] : undefined,
+          metal_secundario_id: select3 ? metalSecundarioIdByCodigo[select3] : undefined,
         });
       } catch (e) {
         console.error('Erro ao atualizar referencia_fornecedor:', e);

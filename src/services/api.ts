@@ -2,22 +2,22 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4020';
 
 // Tipos para as respostas da API
 export interface Artigo {
-  uuid: string;
+  id: number;
   codigo: string;
   nome: string;
   datacriacao: Date;
 }
 
 export interface MetalBase {
-  uuid: string;
   id: number;
+  codigo: string | null;
   nome: string;
   datacriacao: Date;
 }
 
 export interface MetalSecundario {
-  uuid: string;
-  codigo: string;
+  id: number;
+  codigo: string | null;
   nome: string;
   datacriacao: Date;
 }
@@ -118,14 +118,14 @@ export const artigoAPI = {
 // API de Metais Base
 export const metalBaseAPI = {
   getAll: () => fetchAPI<MetalBase[]>('/api/metais-base'),
-  getByUuid: (uuid: string) => fetchAPI<MetalBase>(`/api/metais-base/${uuid}`),
-  create: (data: { id: number; nome: string }) =>
+  getByCodigo: (codigo: string) => fetchAPI<MetalBase>(`/api/metais-base/${codigo}`),
+  create: (data: { codigo: string; nome: string }) =>
     fetchAPI<MetalBase>('/api/metais-base', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  update: (uuid: string, data: { id?: number; nome?: string }) =>
-    fetchAPI<MetalBase>(`/api/metais-base/${uuid}`, {
+  update: (codigo: string, data: { nome?: string }) =>
+    fetchAPI<MetalBase>(`/api/metais-base/${codigo}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
