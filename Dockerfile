@@ -1,4 +1,4 @@
-FROM node:current-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
@@ -14,8 +14,8 @@ COPY . .
 # Compile o projeto para produção
 RUN npm run build
 
-# Exponha a porta 80 para o contêiner
-EXPOSE 80
+# Exponha a porta usada pelo server.ts
+EXPOSE 4021
 
 
 CMD ["npm", "run", "start"]

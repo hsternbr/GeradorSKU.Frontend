@@ -36,10 +36,9 @@ import {
   sequenceAPI,
   uploadExcelAPI,
   itemFornecedorAPI,
-  ItemFornecedor,
   fornecedorAPI,
-  Fornecedor,
 } from './services/api';
+import type { ItemFornecedor, Fornecedor } from './services/api';
 import { gerarSKU } from './utils/gerarSKU';
 
 const { Title } = Typography;
@@ -111,8 +110,8 @@ function AppContent() {
   const [descricaoCompleta, setDescricaoCompleta] = useState<string>('');
   const [descricaoEtiqueta, setDescricaoEtiqueta] = useState<string>('');
   const [imagem, setImagem] = useState<File | null>(null);
-  const [step, setStep] = useState<'lista' | 'form'>('lista');
-
+  /** Nome reservado no banco (sequence), ex. imagemSKU_1.jpg — definido ao selecionar arquivo. */
+  const [imagemNomeBanco, setImagemNomeBanco] = useState<string | null>(null);
   const [showInputs, setShowInputs] = useState(false);
   const [skuGerado, setSkuGerado] = useState<string | null>(null);
   const [salvandoItem, setSalvandoItem] = useState(false);
@@ -365,22 +364,24 @@ function AppContent() {
           break;
         }
         case 'metalBase': {
-          const idNumero = parseInt(values.codigo, 10);
-          if (isNaN(idNumero)) {
-            throw new Error('O código deve ser um número válido');
+          const novoItem = await metalBaseAPI.create({ codigo: values.codigo, nome: values.nome });
+          if (!novoItem.codigo) {
+            throw new Error('Metal base criado sem código');
           }
-          const novoItem = await metalBaseAPI.create({ id: idNumero, nome: values.nome });
           setLabels(prev => ({
             ...prev,
-            metalBase: { ...prev.metalBase, [String(novoItem.id)]: novoItem.nome }
+            metalBase: { ...prev.metalBase, [String(novoItem.codigo)]: String(novoItem.nome) }
           }));
           break;
         }
         case 'metalSecundario': {
           const novoItem = await metalSecundarioAPI.create({ codigo: values.codigo, nome: values.nome });
+          if (!novoItem.codigo) {
+            throw new Error('Metal secundário criado sem código');
+          }
           setLabels(prev => ({
             ...prev,
-            metalSecundario: { ...prev.metalSecundario, [novoItem.codigo]: novoItem.nome }
+            metalSecundario: { ...prev.metalSecundario, [String(novoItem.codigo)]: String(novoItem.nome) }
           }));
           break;
         }
@@ -427,8 +428,11 @@ function AppContent() {
     let picture: string | undefined;
 
     if (imagem) {
-      const extensao = imagem.name.split('.').pop();
-      picture = `${skuGerado}.${extensao}`;
+      if (!imagemNomeBanco) {
+        message.error('Nome da imagem não reservado. Remova e selecione o arquivo novamente.');
+        return;
+      }
+      picture = imagemNomeBanco;
 
       const formData = new FormData();
       formData.append('file', imagem, picture);
@@ -472,9 +476,6 @@ function AppContent() {
     setSalvandoItem(false);
   }
 };
-
-
-
 
   const handleAtualizar = async (campo: 'descricaoCompleta' | 'descricaoEtiqueta') => {
     try {
@@ -1382,6 +1383,11 @@ function AppContent() {
                   >
                     <span style={{ flex: 1, color: '#595959' }}>
                       {imagem.name}
+                      {imagemNomeBanco && (
+                        <span className="block text-sm text-gray-500 mt-1">
+                          Nome no cadastro: {imagemNomeBanco}
+                        </span>
+                      )}
                     </span>
 
                     <Button
@@ -1390,6 +1396,7 @@ function AppContent() {
                       icon={<DeleteOutlined />}
                       onClick={() => {
                         setImagem(null);
+                        setImagemNomeBanco(null);
                         form.setFieldsValue({ imagem: undefined });
                       }}
                       size="large"
@@ -1401,8 +1408,22 @@ function AppContent() {
                 ) : (
                   <Upload
                     accept="image/*"
-                    beforeUpload={(file) => {
-                      setImagem(file);
+                    beforeUpload={async (file) => {
+                      try {
+                        const extensao = file.name.split('.').pop();
+                        if (!extensao) {
+                          message.error('Arquivo sem extensão.');
+                          return Upload.LIST_IGNORE;
+                        }
+                        const { nomeBase } = await sequenceAPI.getNextImagemNome();
+                        setImagemNomeBanco(`${nomeBase}.${extensao}`);
+                        setImagem(file);
+                      } catch (e) {
+                        const msg =
+                          e instanceof Error ? e.message : 'Erro ao reservar nome da imagem';
+                        message.error(msg);
+                        return Upload.LIST_IGNORE;
+                      }
                       return false;
                     }}
                     showUploadList={false}

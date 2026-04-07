@@ -230,6 +230,11 @@ export const sequenceAPI = {
     fetchAPI<{ sequenceFormatada: string }>('/api/sequence/sku', {
       method: 'GET',
     }),
+  /** Base autoincrementável no banco, ex.: imagemSKU_42 (sem extensão). */
+  getNextImagemNome: () =>
+    fetchAPI<{ nomeBase: string }>('/api/sequence/imagem-nome', {
+      method: 'GET',
+    }),
 };
 
 // API de itens de fornecedor (lume_item_fornecedor)
