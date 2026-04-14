@@ -11,7 +11,7 @@ export default defineConfig({
     proxy: {
       // Proxy para API backend local (quando rodando em dev)
       '/api': {
-        target: 'http://localhost:4020',
+        target: 'http://10.1.0.49:4020',
         changeOrigin: true,
       },
       // Proxy opcional para serviço de imagem em dev

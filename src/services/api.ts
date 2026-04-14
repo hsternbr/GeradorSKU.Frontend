@@ -1,4 +1,29 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4020';
+/** Se o build rodar sem .env, ainda aponta para o servidor (evita cair em localhost). */
+export const FALLBACK_API_BASE_URL = 'http://10.1.0.49:4020';
+export const FALLBACK_IMAGEM_BASE_URL = 'http://10.1.0.49:4020';
+
+const envApi = import.meta.env.VITE_API_URL;
+const API_BASE_URL =
+  (typeof envApi === 'string' && envApi.trim() !== '' ? envApi.trim() : null) ||
+  FALLBACK_API_BASE_URL;
+
+/** Origem do backend para arquivos estáticos (ex.: /imagens-fornecedor). */
+export function getBackendOriginForStaticFiles(): string {
+  let base = API_BASE_URL.replace(/\/+$/, '');
+  if (base.toLowerCase().endsWith('/api')) {
+    base = base.slice(0, -4);
+  }
+  return base;
+}
+
+/** Base URL do serviço que recebe POST /imagem (upload de foto do item). */
+export function getImagemUploadBaseUrl(): string {
+  const v = import.meta.env.VITE_API_IMAGEM;
+  if (typeof v === 'string' && v.trim() !== '') {
+    return v.replace(/\/+$/, '');
+  }
+  return FALLBACK_IMAGEM_BASE_URL.replace(/\/+$/, '');
+}
 
 // Tipos para as respostas da API
 export interface Artigo {
@@ -46,6 +71,8 @@ export interface Fornecedor {
 export interface ItemFornecedor {
   id: number;
   codigo_fornecedor: string;
+  /** codigo_sap do fornecedor (lume_fornecedor), para nome do arquivo de imagem */
+  fornecedor_codigo_sap: string;
   caracteristicas: string | null;
   referencia_fornecedor: string | null;
   imagem_path: string | null;
@@ -70,7 +97,8 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
       if (text) {
         try {
           const errorData = JSON.parse(text);
-          errorMessage = errorData.error || errorData.message || errorMessage;
+          errorMessage =
+            errorData.message || errorData.error || errorMessage;
         } catch {
           // Se não for JSON, usa o texto direto
           errorMessage = text;
@@ -230,11 +258,6 @@ export const sequenceAPI = {
     fetchAPI<{ sequenceFormatada: string }>('/api/sequence/sku', {
       method: 'GET',
     }),
-  /** Base autoincrementável no banco, ex.: imagemSKU_42 (sem extensão). */
-  getNextImagemNome: () =>
-    fetchAPI<{ nomeBase: string }>('/api/sequence/imagem-nome', {
-      method: 'GET',
-    }),
 };
 
 // API de itens de fornecedor (lume_item_fornecedor)
@@ -269,7 +292,8 @@ async function uploadFile(endpoint: string, formData: FormData): Promise<any> {
       if (text) {
         try {
           const errorData = JSON.parse(text);
-          errorMessage = errorData.error || errorData.message || errorMessage;
+          errorMessage =
+            errorData.message || errorData.error || errorMessage;
         } catch {
           errorMessage = text;
         }

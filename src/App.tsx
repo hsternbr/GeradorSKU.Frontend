@@ -14,6 +14,7 @@ import {
   Upload,
   Table,
   Drawer,
+  Popover,
 } from 'antd';
 import {
   BarcodeOutlined,
@@ -37,12 +38,15 @@ import {
   uploadExcelAPI,
   itemFornecedorAPI,
   fornecedorAPI,
+  getBackendOriginForStaticFiles,
+  getImagemUploadBaseUrl,
 } from './services/api';
 import type { ItemFornecedor, Fornecedor } from './services/api';
 import { gerarSKU } from './utils/gerarSKU';
 
 const { Title } = Typography;
 const { Option } = Select;
+const SKU_PREVIEW_SEQUENCE = '00000';
 
 type LabelsType = {
   artigo: Record<string, string>;
@@ -87,6 +91,22 @@ const initialLabels: LabelsType = {
   }
 };
 
+function sanitizeImagemNomeSegmento(value: string): string {
+  const t = String(value).trim();
+  if (!t) return 'x';
+  return t.replace(/[/\\:*?"<>|\s]+/g, '_').replace(/_+/g, '_');
+}
+
+/** Mesmo padrão do backend: codigoSap_codigoFornecedor.ext */
+function nomeArquivoImagemFornecedor(
+  codigoSap: string,
+  codigoFornecedor: string,
+  extensao: string
+): string {
+  const ext = extensao.replace(/^\./, '');
+  return `${sanitizeImagemNomeSegmento(codigoSap)}_${sanitizeImagemNomeSegmento(codigoFornecedor)}.${ext}`;
+}
+
 // Schema de validação Yup para os campos de entrada
 const validationSchema = yup.object().shape({
   select1: yup.string().required('Por favor, selecione o Artigo'),
@@ -110,7 +130,7 @@ function AppContent() {
   const [descricaoCompleta, setDescricaoCompleta] = useState<string>('');
   const [descricaoEtiqueta, setDescricaoEtiqueta] = useState<string>('');
   const [imagem, setImagem] = useState<File | null>(null);
-  /** Nome reservado no banco (sequence), ex. imagemSKU_1.jpg — definido ao selecionar arquivo. */
+  /** Nome do arquivo: codigoSap_codigoFornecedor.ext (alinhado ao backend / importação). */
   const [imagemNomeBanco, setImagemNomeBanco] = useState<string | null>(null);
   const [showInputs, setShowInputs] = useState(false);
   const [skuGerado, setSkuGerado] = useState<string | null>(null);
@@ -121,7 +141,7 @@ function AppContent() {
   const [metalSecundarioIdByCodigo, setMetalSecundarioIdByCodigo] = useState<Record<string, number>>({});
   const [modalOpen, setModalOpen] = useState<any>({});
   const [currentModalType, setCurrentModalType] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [excelUploadModalOpen, setExcelUploadModalOpen] = useState(false);
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const [excelPreviewColumns, setExcelPreviewColumns] = useState<string[]>([]);
@@ -134,30 +154,53 @@ function AppContent() {
   const [loadingItensFornecedor, setLoadingItensFornecedor] = useState(false);
   const [selectedItemFornecedorId, setSelectedItemFornecedorId] = useState<number | null>(null);
   const [skuModalOpen, setSkuModalOpen] = useState(false);
+  const [selectsLoaded, setSelectsLoaded] = useState(false);
 
-  // Carregar dados do backend
+  // Carrega tabela principal ao abrir a tela
   useEffect(() => {
-    const carregarDados = async () => {
+    const carregarTabelaPrincipal = async () => {
+      try {
+        setLoadingItensFornecedor(true);
+        const itens = await itemFornecedorAPI.getAll();
+        setItensFornecedor(itens);
+
+        // Carrega fornecedores em chamada separada para não bloquear itens
+        try {
+          const fornecedoresResponse = await fornecedorAPI.getAll();
+          setFornecedores(fornecedoresResponse);
+        } catch (err) {
+          console.error('Erro ao carregar fornecedores:', err);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+        message.error('Erro ao carregar dados do servidor. Usando dados padrão.');
+      } finally {
+        setLoadingItensFornecedor(false);
+      }
+    };
+
+    carregarTabelaPrincipal();
+  }, []);
+
+  // Carrega selects apenas quando o formulário de SKU é aberto
+  useEffect(() => {
+    if (!skuModalOpen || selectsLoaded) {
+      return;
+    }
+
+    const carregarDadosSelects = async () => {
       try {
         setLoading(true);
-        setLoadingItensFornecedor(true);
-        const [
-          artigos,
-          metaisBase,
-          metaisSecundarios,
-          materiais,
-          cores,
-          itens,
-        ] = await Promise.all([
-          artigoAPI.getAll(),
-          metalBaseAPI.getAll(),
-          metalSecundarioAPI.getAll(),
-          materialAPI.getAll(),
-          corAPI.getAll(),
-          itemFornecedorAPI.getAll(),
-        ]);
 
-        // Mapear dados do backend para o formato esperado
+        const [artigos, metaisBase, metaisSecundarios, materiais, cores] =
+          await Promise.all([
+            artigoAPI.getAll(),
+            metalBaseAPI.getAll(),
+            metalSecundarioAPI.getAll(),
+            materialAPI.getAll(),
+            corAPI.getAll(),
+          ]);
+
         const novoLabels = {
           artigo: Object.fromEntries(artigos.map(a => [a.codigo, a.nome])),
           metalBase: Object.fromEntries(
@@ -196,26 +239,17 @@ function AppContent() {
               .map(m => [String(m.codigo), Number(m.id)])
           )
         );
-        setItensFornecedor(itens);
-
-        // Carregar fornecedores em uma chamada separada, para não quebrar a tabela caso falhe
-        try {
-          const fornecedoresResponse = await fornecedorAPI.getAll();
-          setFornecedores(fornecedoresResponse);
-        } catch (err) {
-          console.error('Erro ao carregar fornecedores:', err);
-        }
+        setSelectsLoaded(true);
       } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-        message.error('Erro ao carregar dados do servidor. Usando dados padrão.');
+        console.error('Erro ao carregar selects:', error);
+        message.error('Erro ao carregar dados do formulário.');
       } finally {
         setLoading(false);
-        setLoadingItensFornecedor(false);
       }
     };
 
-    carregarDados();
-  }, [message]);
+    carregarDadosSelects();
+  }, [skuModalOpen, selectsLoaded]);
 
   const totalItens = itensFornecedor.length;
   const comReferencia = itensFornecedor.filter(
@@ -290,18 +324,14 @@ function AppContent() {
       { abortEarly: false }
     );
 
-    // 🔥 BUSCA SEQUENCE DO BANCO
-    const response = await sequenceAPI.getNextSku();
-    const sequenceFormatada = response.sequenceFormatada;
-
-    // 🔥 GERA SKU USANDO A SEQUENCE
+    // Prévia: não consome sequence do banco aqui.
     const sku = gerarSKU(
       select1!,
       select2!,
       select3!,
       select4,
       select5,
-      sequenceFormatada
+      SKU_PREVIEW_SEQUENCE
     );
 
     const novaDescricaoCompleta = gerarDescricaoCompleta(
@@ -325,7 +355,7 @@ function AppContent() {
       descricaoEtiqueta: novaDescricaoEtiqueta
     });
 
-    message.success('SKU e descrições gerados com sucesso!');
+    message.success('Prévia do SKU e descrições geradas. A sequence real será definida ao enviar para o SAP.');
   } catch (error: unknown) {
     if (error instanceof yup.ValidationError) {
       const fieldErrors = error.inner.map(err => ({
@@ -425,44 +455,66 @@ function AppContent() {
   try {
     setSalvandoItem(true);
 
-    let picture: string | undefined;
-
-    if (imagem) {
-      if (!imagemNomeBanco) {
-        message.error('Nome da imagem não reservado. Remova e selecione o arquivo novamente.');
-        return;
-      }
-      picture = imagemNomeBanco;
-
-      const formData = new FormData();
-      formData.append('file', imagem, picture);
-
-      await fetch(`${import.meta.env.VITE_API_IMAGEM}/imagem`, {
-        method: 'POST',
-        body: formData
-      });
+    if (!select1 || !select2 || !select3) {
+      message.error('Seleções obrigatórias do SKU não foram encontradas.');
+      return;
     }
 
-    await itemAPI.create({
-      sku: skuGerado,
+    // Sequence real somente no envio para SAP (evita consumir números no clique de gerar).
+    const response = await sequenceAPI.getNextSku();
+    const sequenceFormatada = response.sequenceFormatada;
+    const skuFinal = gerarSKU(
+      select1,
+      select2,
+      select3,
+      select4,
+      select5,
+      sequenceFormatada
+    );
+    setSkuGerado(skuFinal);
+
+    const itemSelecionado =
+      selectedItemFornecedorId != null
+        ? itensFornecedor.find(i => i.id === selectedItemFornecedorId)
+        : undefined;
+    const pathImportada = itemSelecionado?.imagem_path?.trim();
+    const picture =
+      imagemNomeBanco?.trim() ||
+      (pathImportada ? pathImportada.replace(/^.*[/\\]/, '') : undefined);
+
+    const createResult: any = await itemAPI.create({
+      sku: skuFinal,
       descricaoCompleta,
       descricaoEtiqueta,
       picture,
       itemFornecedorId: selectedItemFornecedorId ?? undefined,
     });
+    if (createResult?.timings) {
+      console.log('⏱️ Timings createItem:', createResult.timings);
+    }
     
     // Atualizar referencia_fornecedor no lume_item_fornecedor vinculado
     if (selectedItemFornecedorId) {
-      try {
-        await itemFornecedorAPI.update(selectedItemFornecedorId, {
-          referencia_fornecedor: skuGerado,
+      // Não bloqueia UX após retorno do SAP.
+      itemFornecedorAPI
+        .update(selectedItemFornecedorId, {
+          referencia_fornecedor: skuFinal,
           artigo_id: select1 ? artigoIdByCodigo[select1] : undefined,
           metal_id: select2 ? metalBaseIdByCodigo[select2] : undefined,
           metal_secundario_id: select3 ? metalSecundarioIdByCodigo[select3] : undefined,
+        })
+        .catch((e) => {
+          console.error('Erro ao atualizar referencia_fornecedor:', e);
         });
-      } catch (e) {
-        console.error('Erro ao atualizar referencia_fornecedor:', e);
-      }
+
+      // Reflete imediatamente na tabela sem precisar atualizar a página
+      setItensFornecedor(prev =>
+        prev.map(item =>
+          item.id === selectedItemFornecedorId
+            ? { ...item, referencia_fornecedor: skuFinal }
+            : item
+        )
+      );
     }
 
     message.success('Item criado no SAP e referência atualizada!');
@@ -524,6 +576,7 @@ function AppContent() {
     setDescricaoCompleta('');
     setDescricaoEtiqueta('');
     setImagem(null);
+    setImagemNomeBanco(null);
     form.resetFields();
     setSkuModalOpen(false);
   };
@@ -733,41 +786,52 @@ function AppContent() {
                 dataIndex: 'imagem_path',
                 key: 'imagem_path',
                 width: '15%',
+                onCell: () => ({
+                  style: { overflow: 'visible', verticalAlign: 'middle' },
+                }),
                 render: (value: string | null) => {
                   if (!value) {
                     return '-';
                   }
 
-                  // URL das imagens
-                  // - Se VITE_API_IMAGEM estiver definida, ela já aponta para a pasta/servidor correto
-                  //   (ex.: http://servidor/uploads/images)
-                  // - Caso contrário, usamos VITE_API_URL (ou origem atual) + /uploads/images
-                  let src: string;
+                  // Imagens servidas pelo backend em /imagens-fornecedor (sempre IP/servidor, não localhost)
+                  const base = getBackendOriginForStaticFiles();
+                  const src = `${base}/imagens-fornecedor/${encodeURIComponent(value)}`;
 
-                  if (import.meta.env.VITE_API_IMAGEM) {
-                    let base = import.meta.env.VITE_API_IMAGEM.replace(/\/+$/, '');
-                    src = `${base}/${value}`;
-                  } else {
-                    let base =
-                      import.meta.env.VITE_API_URL || window.location.origin;
-                    base = base.replace(/\/+$/, '');
-                    if (base.toLowerCase().endsWith('/api')) {
-                      base = base.slice(0, -4);
-                    }
-                    src = `${base}/uploads/images/${value}`;
-                  }
-
-                  return (
+                  const miniatura = (
                     <img
                       src={src}
                       alt="Item"
+                      className="block rounded border border-gray-200 bg-white shadow-sm transition-transform duration-200 ease-out hover:scale-110 hover:shadow-md"
                       style={{
                         maxWidth: 60,
                         maxHeight: 60,
                         objectFit: 'contain',
-                        borderRadius: 4,
                       }}
                     />
+                  );
+
+                  return (
+                    <Popover
+                      placement="left"
+                      mouseEnterDelay={0.2}
+                      mouseLeaveDelay={0.05}
+                      content={
+                        <img
+                          src={src}
+                          alt=""
+                          className="max-h-[min(70vh,420px)] max-w-[min(90vw,420px)] object-contain"
+                        />
+                      }
+                    >
+                      <span
+                        className="inline-block cursor-zoom-in"
+                        onClick={e => e.stopPropagation()}
+                        role="presentation"
+                      >
+                        {miniatura}
+                      </span>
+                    </Popover>
                   );
                 },
               },
@@ -783,7 +847,7 @@ function AppContent() {
                 key: 'caracteristicas'
               },
               {
-                title: 'Referência Fornecedor',
+                title: 'Referência Lume',
                 dataIndex: 'referencia_fornecedor',
                 key: 'referencia_fornecedor'
               }
@@ -795,6 +859,7 @@ function AppContent() {
                 setDescricaoCompleta('');
                 setDescricaoEtiqueta('');
                 setImagem(null);
+                setImagemNomeBanco(null);
                 form.resetFields();
                 setShowInputs(false);
                 setSkuModalOpen(true);
@@ -1409,18 +1474,77 @@ function AppContent() {
                   <Upload
                     accept="image/*"
                     beforeUpload={async (file) => {
+                      const extensao = file.name.split('.').pop();
+                      if (!extensao) {
+                        message.error('Arquivo sem extensão.');
+                        return Upload.LIST_IGNORE;
+                      }
+                      const item =
+                        selectedItemFornecedorId != null
+                          ? itensFornecedor.find(i => i.id === selectedItemFornecedorId)
+                          : undefined;
+                      if (!item) {
+                        message.error('Selecione um item na tabela antes de anexar a imagem.');
+                        return Upload.LIST_IGNORE;
+                      }
+                      if (!item.fornecedor_codigo_sap?.trim() || !item.codigo_fornecedor?.trim()) {
+                        message.error(
+                          'Item sem código SAP do fornecedor ou código fornecedor; não é possível nomear a imagem.'
+                        );
+                        return Upload.LIST_IGNORE;
+                      }
+                      const nomeArquivo = nomeArquivoImagemFornecedor(
+                        item.fornecedor_codigo_sap,
+                        item.codigo_fornecedor,
+                        extensao
+                      );
                       try {
-                        const extensao = file.name.split('.').pop();
-                        if (!extensao) {
-                          message.error('Arquivo sem extensão.');
-                          return Upload.LIST_IGNORE;
+                        const formData = new FormData();
+                        formData.append('file', file, nomeArquivo);
+                        const res = await fetch(`${getImagemUploadBaseUrl()}/imagem`, {
+                          method: 'POST',
+                          body: formData,
+                        });
+                        const text = await res.text();
+                        if (!res.ok) {
+                          let msg = `Erro ${res.status}`;
+                          if (text) {
+                            try {
+                              const j = JSON.parse(text);
+                              msg = j.error || j.message || msg;
+                            } catch {
+                              msg = text;
+                            }
+                          }
+                          throw new Error(msg);
                         }
-                        const { nomeBase } = await sequenceAPI.getNextImagemNome();
-                        setImagemNomeBanco(`${nomeBase}.${extensao}`);
+                        setImagemNomeBanco(nomeArquivo);
                         setImagem(file);
+                        if (selectedItemFornecedorId != null) {
+                          itemFornecedorAPI
+                            .update(selectedItemFornecedorId, {
+                              imagem_path: nomeArquivo,
+                            })
+                            .then(() => {
+                              setItensFornecedor(prev =>
+                                prev.map(it =>
+                                  it.id === selectedItemFornecedorId
+                                    ? { ...it, imagem_path: nomeArquivo }
+                                    : it
+                                )
+                              );
+                            })
+                            .catch((err) => {
+                              console.error('Erro ao gravar imagem_path:', err);
+                              message.warning(
+                                'Imagem salva no disco, mas não atualizou o cadastro. Tente novamente.'
+                              );
+                            });
+                        }
+                        message.success('Imagem enviada com sucesso.');
                       } catch (e) {
                         const msg =
-                          e instanceof Error ? e.message : 'Erro ao reservar nome da imagem';
+                          e instanceof Error ? e.message : 'Falha ao enviar imagem';
                         message.error(msg);
                         return Upload.LIST_IGNORE;
                       }
