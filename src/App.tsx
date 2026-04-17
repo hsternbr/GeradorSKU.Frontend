@@ -20,7 +20,6 @@ import {
   BarcodeOutlined,
   LinkOutlined,
   PlusOutlined,
-  EditOutlined,
   ArrowLeftOutlined,
   UploadOutlined,
   DeleteOutlined
@@ -33,7 +32,6 @@ import {
   materialAPI,
   corAPI,
   itemAPI,
-  itemAPIUpdate,
   sequenceAPI,
   uploadExcelAPI,
   itemFornecedorAPI,
@@ -47,6 +45,13 @@ import { gerarSKU } from './utils/gerarSKU';
 const { Title } = Typography;
 const { Option } = Select;
 const SKU_PREVIEW_SEQUENCE = '00000';
+const STATUS_FILTER_OPTIONS = [
+  'JA_EXISTE',
+  'PENDENTE_CLASSIFICACAO',
+  'CLASSIFICADO',
+  'ENVIADO_SAP',
+  'ERRO_SAP',
+] as const;
 
 type LabelsType = {
   artigo: Record<string, string>;
@@ -151,6 +156,7 @@ function AppContent() {
   const [codigoFornecedor, setCodigoFornecedor] = useState<string>('');
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [itensFornecedor, setItensFornecedor] = useState<ItemFornecedor[]>([]);
+  const [statusFiltro, setStatusFiltro] = useState<string>('TODOS');
   const [loadingItensFornecedor, setLoadingItensFornecedor] = useState(false);
   const [selectedItemFornecedorId, setSelectedItemFornecedorId] = useState<number | null>(null);
   const [skuModalOpen, setSkuModalOpen] = useState(false);
@@ -255,6 +261,15 @@ function AppContent() {
   const comReferencia = itensFornecedor.filter(
     item => item.referencia_fornecedor && item.referencia_fornecedor.trim() !== ''
   ).length;
+  const itemSelecionadoAtual =
+    selectedItemFornecedorId != null
+      ? itensFornecedor.find(item => item.id === selectedItemFornecedorId) ?? null
+      : null;
+  const itemJaCadastrado = !!itemSelecionadoAtual?.referencia_fornecedor?.trim();
+  const itensFornecedorFiltrados =
+    statusFiltro === 'TODOS'
+      ? itensFornecedor
+      : itensFornecedor.filter(item => item.status === statusFiltro);
 
   const artigoOptions = Object.entries(labels.artigo).map(([value, label]) => ({ value, label }));
   const metalBaseOptions = Object.entries(labels.metalBase).map(([value, label]) => ({ value, label }));
@@ -447,6 +462,11 @@ function AppContent() {
   };
 
  const handleCriarItemSAP = async () => {
+  if (itemJaCadastrado) {
+    message.warning('Este item já possui Referência Lume. Não é permitido criar outro código.');
+    return;
+  }
+
   if (!skuGerado || !descricaoCompleta || !descricaoEtiqueta) {
     message.warning('Preencha os campos obrigatórios');
     return;
@@ -499,6 +519,7 @@ function AppContent() {
       itemFornecedorAPI
         .update(selectedItemFornecedorId, {
           referencia_fornecedor: skuFinal,
+          status: 'ENVIADO_SAP',
           artigo_id: select1 ? artigoIdByCodigo[select1] : undefined,
           metal_id: select2 ? metalBaseIdByCodigo[select2] : undefined,
           metal_secundario_id: select3 ? metalSecundarioIdByCodigo[select3] : undefined,
@@ -511,13 +532,14 @@ function AppContent() {
       setItensFornecedor(prev =>
         prev.map(item =>
           item.id === selectedItemFornecedorId
-            ? { ...item, referencia_fornecedor: skuFinal }
+            ? { ...item, referencia_fornecedor: skuFinal, status: 'ENVIADO_SAP' }
             : item
         )
       );
     }
 
     message.success('Item criado no SAP e referência atualizada!');
+    handleVoltar();
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : 'Erro desconhecido';
@@ -528,36 +550,6 @@ function AppContent() {
     setSalvandoItem(false);
   }
 };
-
-  const handleAtualizar = async (campo: 'descricaoCompleta' | 'descricaoEtiqueta') => {
-    try {
-      if (!skuGerado) {
-        message.warning('Gere o SKU primeiro antes de atualizar');
-        return;
-      }
-
-      const valor = campo === 'descricaoCompleta' ? descricaoCompleta : descricaoEtiqueta;
-      
-      if (!valor || valor.trim() === '') {
-        message.warning('Por favor, preencha o campo antes de atualizar');
-        return;
-      }
-
-      // Atualizar item no backend
-      await itemAPIUpdate.updateDescricao(
-        skuGerado,
-        {
-          descricaoCompleta,
-          descricaoEtiqueta,
-        }
-);
-
-      message.success(`${campo === 'descricaoCompleta' ? 'Descrição completa' : 'Descrição etiqueta'} atualizada com sucesso!`);
-    } catch (error) {
-      message.error('Erro ao atualizar item');
-      console.error('Erro ao atualizar:', error);
-    }
-  };
 
   const getModalTitle = (tipo: string) => {
     const titulos: { [key: string]: string } = {
@@ -577,6 +569,7 @@ function AppContent() {
     setDescricaoEtiqueta('');
     setImagem(null);
     setImagemNomeBanco(null);
+    setSelectedItemFornecedorId(null);
     form.resetFields();
     setSkuModalOpen(false);
   };
@@ -725,20 +718,24 @@ function AppContent() {
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
-      <div className="w-full max-w-4xl">
+      <div className="w-full max-w-[1400px]">
         <Card
           className="w-full shadow-xl"
           style={{
             borderRadius: '16px',
             border: 'none',
             display: 'flex',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            height: '92vh',
+            maxHeight: '920px',
+            overflow: 'hidden',
           }}
           bodyStyle={{
-            padding: '32px',
+            padding: '24px 28px',
             display: 'flex',
             flexDirection: 'column',
-            flex: 1
+            flex: 1,
+            overflow: 'hidden',
           }}
         >
           <div
@@ -768,19 +765,52 @@ function AppContent() {
             </Button>
           </div>
 
+          <div style={{ marginBottom: 16, maxWidth: 320 }}>
+            <div style={{ marginBottom: 6, fontWeight: 600, color: '#303030' }}>
+              Filtrar por Status
+            </div>
+            <Select
+              size="large"
+              value={statusFiltro}
+              onChange={value => setStatusFiltro(value)}
+              style={{ width: '100%' }}
+            >
+              <Option value="TODOS">Todos</Option>
+              {STATUS_FILTER_OPTIONS.map(status => (
+                <Option key={status} value={status}>
+                  {status}
+                </Option>
+              ))}
+            </Select>
+          </div>
+
           <Table
             bordered
             loading={loadingItensFornecedor}
             pagination={{ pageSize: 10, showSizeChanger: false }}
-            dataSource={itensFornecedor.map(item => ({
+            scroll={{ y: 520 }}
+            dataSource={itensFornecedorFiltrados.map(item => ({
               key: String(item.id),
               id: item.id,
+              upload_id: (item as any).upload_id ?? (item as any).uploadId ?? null,
+              uploadId: (item as any).uploadId ?? (item as any).upload_id ?? null,
+              status: item.status,
               imagem_path: item.imagem_path,
               codigo_fornecedor: item.codigo_fornecedor,
               caracteristicas: item.caracteristicas,
               referencia_fornecedor: item.referencia_fornecedor
             }))}
             columns={[
+              {
+                title: 'Número Importação',
+                dataIndex: 'upload_id',
+                key: 'upload_id',
+                width: '12%',
+                render: (value: number | null | undefined, record: any) => {
+                  const v = value ?? record?.uploadId ?? null;
+                  return v == null ? '-' : String(v);
+                },
+              },
               {
                 title: 'Imagem',
                 dataIndex: 'imagem_path',
@@ -865,9 +895,12 @@ function AppContent() {
                 setSkuModalOpen(true);
               }
             })}
-            rowClassName={() =>
-              'cursor-pointer hover:bg-blue-50 transition-colors'
-            }
+            rowClassName={record => {
+              const isSelected = Number(record.id) === selectedItemFornecedorId;
+              return isSelected
+                ? 'cursor-pointer bg-blue-100 hover:bg-blue-100 transition-colors'
+                : 'cursor-pointer hover:bg-blue-50 transition-colors';
+            }}
           />
         </Card>
       </div>
@@ -1086,13 +1119,13 @@ function AppContent() {
       {/* Painel lateral (Drawer) para geração de SKU e preenchimento de descrições do item selecionado */}
       <Drawer
         placement="right"
-        width={520}
+        width={640}
         open={skuModalOpen}
         onClose={handleVoltar}
         mask={false}
         title={
           selectedItemFornecedorId
-            ? `Classificar item #${selectedItemFornecedorId}`
+            ? `Classificar item `
             : 'Gerador de SKU'
         }
       >
@@ -1314,6 +1347,7 @@ function AppContent() {
                 block
                 icon={<BarcodeOutlined />}
                 onClick={handleGerarSKU}
+                disabled={itemJaCadastrado}
                 size="large"
                 className="!rounded-lg !h-12 !text-base !font-medium shadow-md hover:shadow-lg transition-all"
               >
@@ -1369,6 +1403,7 @@ function AppContent() {
                 block
                 size="large"
                 loading={salvandoItem}
+                disabled={itemJaCadastrado}
                 className="!rounded-lg !h-12 !text-base !font-medium shadow-md hover:shadow-lg transition-all !mb-6"
               >
                 {skuGerado}
@@ -1391,17 +1426,6 @@ function AppContent() {
                   onChange={e => setDescricaoCompleta(e.target.value)}
                 />
               </Form.Item>
-              <Form.Item style={{ textAlign: 'right', marginBottom: '24px' }}>
-                <Button
-                  type="default"
-                  icon={<EditOutlined />}
-                  onClick={() => handleAtualizar('descricaoCompleta')}
-                  size="large"
-                  className="!rounded-lg"
-                >
-                  Atualizar
-                </Button>
-              </Form.Item>
 
               <Form.Item
                 name="descricaoEtiqueta"
@@ -1418,20 +1442,9 @@ function AppContent() {
                   onChange={e => setDescricaoEtiqueta(e.target.value)}
                 />
               </Form.Item>
-              <Form.Item style={{ textAlign: 'right', marginBottom: '24px' }}>
-                <Button
-                  type="default"
-                  icon={<EditOutlined />}
-                  onClick={() => handleAtualizar('descricaoEtiqueta')}
-                  size="large"
-                  className="!rounded-lg"
-                >
-                  Atualizar
-                </Button>
-              </Form.Item>
 
-              <Form.Item 
-                name="imagem" 
+              <Form.Item
+                name="imagem"
                 label={<span className="text-base font-semibold">Imagem (Opcional)</span>}
               >
                 {imagem ? (

@@ -70,6 +70,8 @@ export interface Fornecedor {
 // Itens de fornecedor (tabela lume_item_fornecedor)
 export interface ItemFornecedor {
   id: number;
+  upload_id: number;
+  status: string;
   codigo_fornecedor: string;
   /** codigo_sap do fornecedor (lume_fornecedor), para nome do arquivo de imagem */
   fornecedor_codigo_sap: string;
