@@ -67,6 +67,7 @@ export interface Fornecedor {
   nome: string;
 }
 
+
 // Itens de fornecedor (tabela lume_item_fornecedor)
 export interface ItemFornecedor {
   id: number;
