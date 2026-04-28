@@ -1,6 +1,5 @@
 /** Se o build rodar sem .env, ainda aponta para o servidor (evita cair em localhost). */
 export const FALLBACK_API_BASE_URL = 'http://10.1.0.49:4020';
-export const FALLBACK_IMAGEM_BASE_URL = 'http://10.1.0.49:4020';
 
 const envApi = import.meta.env.VITE_API_URL;
 const API_BASE_URL =
@@ -22,7 +21,7 @@ export function getImagemUploadBaseUrl(): string {
   if (typeof v === 'string' && v.trim() !== '') {
     return v.replace(/\/+$/, '');
   }
-  return FALLBACK_IMAGEM_BASE_URL.replace(/\/+$/, '');
+  return getBackendOriginForStaticFiles();
 }
 
 // Tipos para as respostas da API
